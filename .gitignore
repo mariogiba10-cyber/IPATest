@@ -1,0 +1,7 @@
+# El proyecto Xcode se regenera en la nube: no hace falta subirlo
+IPATest.xcodeproj/
+# Resultados de compilación
+build/
+Payload/
+*.ipa
+.DS_Store

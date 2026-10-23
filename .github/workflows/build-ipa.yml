@@ -1,0 +1,65 @@
+# Receta que GitHub ejecuta en un Mac en la nube para producir IPATest.ipa
+name: Compilar IPA
+
+on:
+  push:
+    branches: [main]        # Se lanza al hacer "git push" a la rama main
+  workflow_dispatch:        # Y también a mano (web o "gh workflow run")
+
+jobs:
+  compilar:
+    runs-on: macos-26       # macOS 26 con Xcode preinstalado
+    timeout-minutes: 30     # Corta si algo se cuelga (no gasta minutos de más)
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: "1"   # Acelera la instalación con brew
+
+    steps:
+      - name: 1. Descargar el código del repositorio
+        uses: actions/checkout@v5
+
+      - name: 2. Mostrar versiones (útil para diagnosticar)
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: 3. Instalar XcodeGen
+        run: brew install xcodegen
+
+      - name: 4. Generar IPATest.xcodeproj desde project.yml
+        run: xcodegen generate
+
+      - name: 5. Compilar para iPhone real, sin firmar
+        run: |
+          xcodebuild \
+            -project IPATest.xcodeproj \
+            -scheme IPATest \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+
+      - name: 6. Empaquetar el .app dentro de un .ipa
+        run: |
+          # Un .ipa es un ZIP con una carpeta "Payload" que contiene la app
+          APP_PATH="$(find build/Build/Products -type d -name 'IPATest.app' | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "ERROR: no se encontró IPATest.app"; exit 1
+          fi
+          echo "App encontrada en: $APP_PATH"
+          rm -rf Payload IPATest.ipa
+          mkdir Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry IPATest.ipa Payload
+          ls -lh IPATest.ipa
+          unzip -l IPATest.ipa | head -n 20   # Prueba de que el contenido es correcto
+
+      - name: 7. Publicar el .ipa para descargarlo
+        uses: actions/upload-artifact@v7
+        with:
+          name: IPATest-ipa
+          path: IPATest.ipa
+          if-no-files-found: error   # Si no hay .ipa, el trabajo falla (no un "éxito" falso)
+          retention-days: 30
